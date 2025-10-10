@@ -60,3 +60,13 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
 
 torch.save(model.state_dict(), "checkpoint_finetuned.pt")
+
+
+
+inputs = {
+    "train": "s3://sagemaker-sample-files/datasets/image/object-detection/coco/train",
+    "val":   "s3://sagemaker-sample-files/datasets/image/object-detection/coco/val"
+}
+
+
+aws s3 ls s3://sagemaker-sample-files/datasets/image/object-detection/coco/train/

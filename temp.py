@@ -1,48 +1,82 @@
-import sagemaker
-from sagemaker.processing import ScriptProcessor, ProcessingInput, ProcessingOutput
+from sagemaker import jumpstart
 
-sess = sagemaker.Session()
-role = sagemaker.get_execution_role()
+# List model IDs by task (for example: image classification)
+model_ids = jumpstart.retrieve_jumpstart_model_ids(model_filter="task == 'image-classification'")
+print("Available JumpStart model IDs:")
+for mid in model_ids[:10]:
+    print(mid)
 
-# TensorFlow CPU image is enough (for conversion only)
-image_uri = sagemaker.image_uris.retrieve(
-    framework="tensorflow",
-    region=sess.boto_region_name,
-    version="2.12",
-    image_scope="training",   # has Python + pip + TF preinstalled
-    instance_type="ml.m5.xlarge"
-)
+----
+from sagemaker import jumpstart
 
-# Create processor
-processor = ScriptProcessor(
-    image_uri=image_uri,
-    command=["python3"],
-    role=role,
-    instance_type="ml.m5.xlarge",
-    instance_count=1,
-    base_job_name=JOB_NAME_PREFIX,
-    env={"QAIHUB_API_TOKEN": AI_HUB_API_TOKEN},
-)
+model_id = "tensorflow-ic-mobilenet-v3-small-imagenet1k-classification"
 
-# Define I/O
-inputs = []
-outputs = [
-    ProcessingOutput(
-        source="/opt/ml/processing/output",
-        destination=f"s3://{sess.default_bucket()}/qaihub/compile_outputs/"
-    )
-]
+# Retrieve metadata
+metadata = jumpstart.retrieve_jumpstart_model_metadata(model_id=model_id)
+print("Model Name:", metadata["model_name"])
+print("Model ID:", metadata["model_id"])
+print("Model Version:", metadata["version"])
+print("Framework:", metadata["framework"])
+print("Task:", metadata["task"])
+-----
 
-# Run
-processor.run(
-    code="src/convert_and_compile.py",
-    inputs=inputs,
-    outputs=outputs,
-    arguments=[
-        "--s3_model_artifact", S3_MODEL_ARTIFACT,
-        "--img_size", str(IMG_SIZE),
-        "--target_device_name", TARGET_DEVICE_NAME,
-        "--precision", PRECISION,
-        "--s3_calib_images", S3_CALIB_IMAGES or "",
-    ]
-)
+import boto3
+sm = boto3.client("sagemaker")
+
+# List your registered models
+resp = sm.list_models(MaxResults=10)
+for m in resp["Models"]:
+    print("Model name:", m["ModelName"])
+
+------
+
+from sagemaker import jumpstart
+import pandas as pd
+
+# 1️⃣ List ALL JumpStart model IDs available in your region
+all_model_ids = jumpstart.retrieve_jumpstart_model_ids()
+print(f"Total models available: {len(all_model_ids)}")
+
+# Convert to DataFrame for easy viewing
+df_all = pd.DataFrame(all_model_ids, columns=["model_id"])
+df_all.head(10)
+
+
+-----
+filtered_ic = jumpstart.retrieve_jumpstart_model_ids(model_filter="task == 'image-classification'")
+print(f"Total image-classification models: {len(filtered_ic)}")
+pd.DataFrame(filtered_ic, columns=["model_id"]).head(10)
+
+
+----
+
+filtered_tf = jumpstart.retrieve_jumpstart_model_ids(model_filter="framework == 'tensorflow'")
+print(f"TensorFlow models: {len(filtered_tf)}")
+
+filtered_pt = jumpstart.retrieve_jumpstart_model_ids(model_filter="framework == 'pytorch'")
+print(f"PyTorch models: {len(filtered_pt)}")
+
+-----
+
+keyword = "mobilenet"
+filtered_keyword = [mid for mid in all_model_ids if keyword.lower() in mid.lower()]
+print(f"Models containing '{keyword}': {len(filtered_keyword)}")
+pd.DataFrame(filtered_keyword, columns=["model_id"])
+
+-------
+model_id = filtered_ic[0]  # pick the first image-classification model
+metadata = jumpstart.retrieve_jumpstart_model_metadata(model_id=model_id)
+
+# Display useful fields
+print("Model Name:", metadata["model_name"])
+print("Model ID:", metadata["model_id"])
+print("Version:", metadata["version"])
+print("Framework:", metadata["framework"])
+print("Task:", metadata["task"])
+print("Training supported:", metadata["supports_training"])
+
+--------
+
+filter_expr = "task == 'image-classification' and framework == 'tensorflow'"
+filtered_tf_ic = jumpstart.retrieve_jumpstart_model_ids(model_filter=filter_expr)
+pd.DataFrame(filtered_tf_ic, columns=["model_id"]).head(10)

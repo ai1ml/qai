@@ -1,11 +1,12 @@
-import os
-os.environ["CUDA_VISIBLE_DEVICES"] = ""  # skip GPU init
+!pip install --upgrade pip setuptools wheel
+!pip install --no-cache-dir tensorflow-macos==2.13 tensorflow-metal==1.1.0
+
+
 import tensorflow as tf
+print(tf.__version__)
 
-model = tf.saved_model.load("path/to/saved_model")
-sig = model.signatures["serving_default"]  # may still take a bit, but faster now
 
-for n, t in sig.structured_input_signature[1].items():
-    print("Input:", n, t.shape, t.dtype)
-for n, t in sig.structured_outputs.items():
-    print("Output:", n, t.shape, t.dtype)
+!python -m tensorflow.python.tools.saved_model_cli show \
+  --dir "/path/to/saved_model" \
+  --tag_set serve \
+  --signature_def serving_default

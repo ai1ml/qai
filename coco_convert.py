@@ -41,10 +41,17 @@ def _read_json(p: Path) -> dict:
 
 
 def scan_pairs(data_root: Path, images_glob: str = "**/*.jpg") -> List[ImgAnnPair]:
-    """Find images and their sibling annotation .json files (e.g., 001.jpg + 001.jpg.json)."""
+    """
+    Find image/annotation pairs even when they are in separate subfolders,
+    e.g. data_root/images/*.jpg and data_root/annotations/*.json
+    """
+    images_dir = data_root / "images"
+    ann_dir = data_root / "annotations"
+    image_files = sorted(images_dir.rglob(images_glob))
     pairs: List[ImgAnnPair] = []
-    for img in sorted(data_root.rglob(images_glob)):
-        ann = img.with_suffix(img.suffix + ".json")  # 001.jpg -> 001.jpg.json
+    for img in image_files:
+        stem = img.stem  # e.g., "001"
+        ann = ann_dir / f"{stem}.json"
         if ann.exists():
             pairs.append(ImgAnnPair(img, ann))
     return pairs

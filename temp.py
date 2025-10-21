@@ -1,23 +1,40 @@
 import sagemaker
-from sagemaker.s3 import S3Uploader
+from sagemaker.pytorch import PyTorch
+from sagemaker.inputs import TrainingInput
 
-bucket = sagemaker.Session().default_bucket()
-prefix = "datasets/supermarket_shelves_coco"
+session = sagemaker.Session()
+region = session.boto_region_name
+role = sagemaker.get_execution_role()  # if running inside SageMaker Notebook; else paste your role ARN
 
-# Upload images (directly from raw)
-S3Uploader.upload(
-    local_path="../data_raw/Supermarket shelves/Supermarket shelves/images",
-    desired_s3_uri=f"s3://{bucket}/{prefix}/images"
+# Your dataset S3 prefix built in Phase 1
+s3_prefix = "s3://<your-bucket>/datasets/supermarket_shelves_coco/"  # <-- replace
+
+print("Region:", region)
+print("Role:", role)
+print("Dataset S3:", s3_prefix)
+
+
+
+estimator = PyTorch(
+    entry_point="train_detr.py",
+    source_dir="../training",               # folder containing train_detr.py and dataset_coco.py
+    role=role,
+    framework_version="1.13",
+    py_version="py39",
+    instance_type="ml.g4dn.xlarge",
+    instance_count=1,
+    hyperparameters={
+        "images_root": "images",
+        "train_annotations": "annotations/instances_train.json",
+        "val_annotations":   "annotations/instances_val.json",  # or instances_test.json if you chose test
+        "labels_file":       "labels.txt",
+        "epochs": 25,
+        "batch_size": 2,
+        "lr": 1e-4,
+        "weight_decay": 1e-4,
+        "num_workers": 4,
+    },
 )
 
-# Upload annotations + labels
-S3Uploader.upload(
-    local_path="../data_coco/annotations",
-    desired_s3_uri=f"s3://{bucket}/{prefix}/annotations"
-)
-S3Uploader.upload(
-    local_path="../data_coco/labels.txt",
-    desired_s3_uri=f"s3://{bucket}/{prefix}/labels.txt"
-)
-
-print(f"✅ Uploaded to s3://{bucket}/{prefix}/")
+estimator.fit({"training": TrainingInput(s3_prefix)})
+print("Model artifact:", estimator.model_data)

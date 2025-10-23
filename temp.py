@@ -1,38 +1,45 @@
-import operator, functools
-import torch.nn as nn
+import sagemaker
+from sagemaker.huggingface import HuggingFace
+from sagemaker.inputs import TrainingInput
 
-def _get_by_path(root, path):
-    return functools.reduce(getattr, [root] + path.split("."))
+session = sagemaker.Session()
+role = sagemaker.get_execution_role()  # if inside SageMaker notebook
+region = session.boto_region_name
 
-def _set_by_path(root, path, value):
-    parent_path, attr = path.rsplit(".", 1)
-    parent = _get_by_path(root, parent_path) if parent_path else root
-    setattr(parent, attr, value)
+s3_prefix = "s3://<your-bucket>/datasets/supermarket_shelves_coco/"  # <-- change
 
-def reinit_class_head(model: nn.Module, num_classes: int, coco_classes_plus_bg: int = 92):
-    """
-    Find the classification Linear by SHAPE (out_features == COCO+bg default, usually 92)
-    and replace it with nn.Linear(in_features, num_classes+1).
-    Works even if the attribute isn't named 'class_embed'.
-    """
-    candidates = []
-    for name, m in model.named_modules():
-        if isinstance(m, nn.Linear):
-            candidates.append((name, m.in_features, m.out_features))
+print("Region:", region)
+print("Role:", role)
+print("Dataset S3:", s3_prefix)
 
-    # Prefer layers that look like COCO heads (out=92), else fall back to the largest out layer
-    head = None
-    for name, inf, outf in candidates:
-        if outf == coco_classes_plus_bg:
-            head = (name, inf, outf); break
-    if head is None and candidates:
-        head = max(candidates, key=lambda t: t[2])  # largest out_features as fallback
 
-    if head is None:
-        raise RuntimeError("No Linear layers found in model to swap as class head. "
-                           "Enable debug print of model.named_modules().")
+----
+# HF DLC versions (pick stable)
+hf_estimator = HuggingFace(
+    entry_point="train_hf_detr.py",
+    source_dir="../training",           # contains train_hf_detr.py & dataset_coco_hf.py
+    role=role,
+    transformers_version="4.44.0",
+    pytorch_version="2.3.0",
+    py_version="py310",
+    instance_type="ml.g4dn.xlarge",
+    instance_count=1,
+    hyperparameters={
+        "model_name": "facebook/detr-resnet-50",
+        "images_root": "images",
+        "train_annotations": "annotations/instances_train.json",
+        "val_annotations":   "annotations/instances_val.json",
+        "labels_file":       "labels.txt",
+        "epochs": 25,
+        "train_batch_size": 2,
+        "eval_batch_size": 2,
+        "lr": 1e-4,
+        "weight_decay": 1e-4,
+        "fp16": 1,
+        "compile_height": 800,
+        "compile_width": 800,
+    },
+)
 
-    name, in_f, out_f = head
-    new_head = nn.Linear(in_f, num_classes + 1)
-    _set_by_path(model, name, new_head)
-    print(f"[head] Replaced '{name}' Linear({in_f}->{out_f}) with Linear({in_f}->{num_classes+1})")
+hf_estimator.fit({"training": TrainingInput(s3_prefix)})
+print("Model artifact:", hf_estimator.model_data)

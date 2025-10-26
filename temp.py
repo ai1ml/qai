@@ -4,15 +4,14 @@
     {
       "Effect": "Allow",
       "Action": [
-        "s3:ListAllMyBuckets",
-        "s3:ListBucket",
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:DeleteObject"
+        "glue:GetDatabase",
+        "glue:GetDatabases",
+        "glue:GetTable",
+        "glue:GetTables",
+        "glue:GetPartitions",
+        "glue:SearchTables"
       ],
-      "Resource": [
-        "arn:aws:s3:::*"
-      ]
+      "Resource": "*"
     }
   ]
 }

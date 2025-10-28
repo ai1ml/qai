@@ -1,46 +1,53 @@
-import boto3, random
+fine_tune_model_path = f"s3://{s3_bucket}/mobilenetv2/fine-tuned-model/"
 
-# ======= CONFIGURE THESE =======
-SRC_BUCKET   = "your-bucket"                  # where all your data lives now
-SRC_PREFIX   = "your/data/prefix/"            # e.g. "datasets/tf_flowers/"
-DST_BUCKET   = SRC_BUCKET                     # can be same or different bucket
-TRAIN_PREFIX = "datasets_split/training/"     # destination prefix for training
-VAL_PREFIX   = "datasets_split/validation/"   # destination prefix for validation
-TRAIN_RATIO  = 0.95                           # 95% train / 5% val
-SEED         = 42
-# =================================
+estimator = JumpStartEstimator(
+    role=aws_role,
+    model_id=model_id,                    # <- ensure no space/typo
+    model_version=model_version,
+    instance_type=training_instance_type,
+    instance_count=1,
+    max_run=36000,
+    output_path=fine_tune_model_path,
+    tags=tags,
+)
 
-s3 = boto3.client("s3")
-paginator = s3.get_paginator("list_objects_v2")
+# If supported by the model, you can also set early stopping
+# estimator.set_hyperparameters(early_stopping=True, early_stopping_patience=3)
 
-# 1) Collect keys
-keys = []
-for page in paginator.paginate(Bucket=SRC_BUCKET, Prefix=SRC_PREFIX):
-    for obj in page.get("Contents", []):
-        k = obj["Key"]
-        if k.endswith("/") or k == SRC_PREFIX:
-            continue
-        keys.append(k)
+# ✅ Add a "validation" channel
+estimator.fit({
+    "training":   training_dataset,       # s3://... (folder, tar.gz, or manifest)
+    "validation": validation_dataset,     # s3://... (same structure as training)
+})
 
-# 2) Split
-random.Random(SEED).shuffle(keys)
-cut = max(1, int(len(keys) * TRAIN_RATIO))
-train_keys, val_keys = keys[:cut], keys[cut:]
+print("fine tuned model path:", fine_tune_model_path)
+print("model path:", estimator.model_data)
+------
+from sagemaker.analytics import TrainingJobAnalytics
 
-# 3) Copy helpers (preserve relative path beneath SRC_PREFIX)
-def rel(k): return k[len(SRC_PREFIX):]
-def dst_key_train(k): return TRAIN_PREFIX + rel(k)
-def dst_key_val(k):   return VAL_PREFIX   + rel(k)
+tja = TrainingJobAnalytics(
+    training_job_name=estimator.latest_training_job.name,
+    metric_names=["validation:accuracy", "validation:loss", "train:accuracy", "train:loss"]
+)
+df = tja.dataframe()
+print(df.sort_values("timestamp").tail(10))
 
-for k in train_keys:
-    s3.copy_object(Bucket=DST_BUCKET,
-                   CopySource={"Bucket": SRC_BUCKET, "Key": k},
-                   Key=dst_key_train(k))
-for k in val_keys:
-    s3.copy_object(Bucket=DST_BUCKET,
-                   CopySource={"Bucket": SRC_BUCKET, "Key": k},
-                   Key=dst_key_val(k))
 
-print(f"Total: {len(keys)}  →  train: {len(train_keys)}  val: {len(val_keys)}")
-print(f"Training prefix:  s3://{DST_BUCKET}/{TRAIN_PREFIX}")
-print(f"Validation prefix: s3://{DST_BUCKET}/{VAL_PREFIX}")
+---
+transformer = estimator.transformer(
+    instance_type="ml.m5.xlarge",
+    instance_count=1,
+    assemble_with="Line",
+    strategy="SingleRecord"
+)
+
+# If you have a manifest (recommended):
+#   transformer.transform(data=validation_manifest_s3_uri, content_type="application/jsonlines", split_type="Line")
+# If you have a folder/tar of images (depends on the JumpStart inference script expectations):
+transformer.transform(
+    data=validation_dataset,              # s3://... (manifest or folder)
+    content_type="application/x-image",   # adjust if using manifest
+    split_type="Line"                     # or None, depending on your format
+)
+transformer.wait()
+print("Batch output:", transformer.output_path)

@@ -1,3 +1,6 @@
-print("type:", type(compile_job).__name__)
-print("job_type:", getattr(compile_job, "job_type", None))
-print("status:", getattr(compile_job, "get_status", lambda:None)())
+import qai_hub as hub
+
+compile_job = hub.get_job("j9aegxovs5")
+print("Status:", compile_job.get_status().code)
+print("Shapes:", getattr(compile_job, "shapes", None) or getattr(compile_job, "target_shapes", None))
+compiled_model = compile_job.get_target_model()

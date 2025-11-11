@@ -1,47 +1,33 @@
-from transformers import AutoTokenizer
-import numpy as np
-import qai_hub as hub
+# === Use Bitext Customer Support dataset (Q&A) ===
+from datasets import load_dataset
 
-# === CONFIG ===
-SEQ_LEN = 32
-PROMPT = "Explain edge AI in one sentence."
-DEVICE_NAME = "Samsung Galaxy S24"
+USE_TAGS_IN_CONTEXT = True  # set False to omit category/intent
 
-# === LOAD TOKENIZER AND BUILD INPUT ===
-tok = AutoTokenizer.from_pretrained("./fine-tuned-llama-1b", use_fast=True)
-enc = tok(
-    PROMPT,
-    return_tensors="np",
-    padding="max_length",
-    truncation=True,
-    max_length=SEQ_LEN
+bitext = load_dataset(
+    "bitext/Bitext-customer-support-llm-chatbot-training-dataset",
+    split="train"
 )
 
-# ✅ FIX: Wrap input array inside a list, and cast to int32
-inputs = {"input_ids": [enc["input_ids"].astype(np.int32)]}
+def to_js_format(ex):
+    instr = (ex.get("instruction") or "").strip()
+    resp  = (ex.get("response") or "").strip()
+    if USE_TAGS_IN_CONTEXT:
+        cat = (ex.get("category") or "").strip()
+        intent = (ex.get("intent") or "").strip()
+        ctx = f"category:{cat}; intent:{intent}".strip(" ;")
+    else:
+        ctx = ""
+    return {"instruction": instr, "context": ctx, "response": resp}
 
-# === RUN INFERENCE ===
-device = hub.Device(DEVICE_NAME)
-compiled_model = compile_job.get_target_model()
+bitext = bitext.map(to_js_format, remove_columns=[c for c in bitext.column_names
+                                                  if c not in ["instruction","context","response"]])
 
-infer_job = hub.submit_inference_job(
-    model=compiled_model,
-    device=device,
-    inputs=inputs
-)
+# 90/10 split
+train_and_test_dataset = bitext.train_test_split(test_size=0.1, seed=42)
 
-infer_job.wait()
-out = infer_job.download_output_data()
+# Save JSONL for JumpStart (one record per line)
+train_and_test_dataset["train"].to_json("train.jsonl", lines=True)
+train_and_test_dataset["test"].to_json("val.jsonl", lines=True)  # optional validation channel
 
-# === CHECK OUTPUT ===
-if out is None:
-    print("❌ Inference failed. Check job URL:", infer_job.url)
-else:
-    print("✅ Output keys:", list(out.keys()))
-    logits = np.array(out.get("output_0", list(out.values())[0]))
-    print("Logits shape:", logits.shape)
-
-    # === SIMPLE GREEDY DECODE ===
-    next_token_id = int(logits[0, -1].argmax() if logits.ndim == 3 else logits[-1].argmax())
-    generated = enc["input_ids"][0].tolist() + [next_token_id]
-    print("\n🧠 Generated:", tok.decode(generated, skip_special_tokens=True))
+print(train_and_test_dataset)
+print(train_and_test_dataset["train"][0])

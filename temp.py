@@ -1,25 +1,32 @@
-from sagemaker.jumpstart.model import JumpStartModel
+import base64
 from sagemaker.serializers import IdentitySerializer
 from sagemaker.deserializers import JSONDeserializer
+from IPython.display import HTML, display
 
-# same model_id/model_version you fine-tune later
-baseline_model = JumpStartModel(model_id=model_id, model_version=model_version)
-baseline_predictor = baseline_model.deploy(
-    initial_instance_count=1,
-    instance_type=endpoint_instance_type,
-    endpoint_name="baseline-pretrained-endpoint",
-)
+# --- Configure predictor ---
+predictor.serializer = IdentitySerializer("application/x-image")
+predictor.deserializer = JSONDeserializer()
 
-# match your existing predictor I/O
-baseline_predictor.serializer   = IdentitySerializer(content_type="application/x-image")
-baseline_predictor.deserializer = JSONDeserializer()
-baseline_predictor.accept       = "application/json;verbose"
+# --- Path to your local image ---
+image_path = "/Users/sachinmittal/Desktop/test_flower.jpg"
 
----------
+# --- Read image bytes ---
+with open(image_path, "rb") as f:
+    img_bytes = f.read()
 
-print("=== Baseline (pretrained) validation ===")
-predictor = baseline_predictor   # <-- one line swap
-# ➜ now run your existing validation/inference block as-is
-# (after it finishes, capture any metrics you print, e.g.)
-acc_baseline = acc
-cm_baseline  = cm
+# --- Run inference ---
+result = predictor.predict(img_bytes)
+
+# --- Parse response ---
+labels = result.get("labels", [])
+probs = result.get("probabilities", [])
+
+# --- Get Top-5 ---
+top5 = sorted(zip(labels, probs), key=lambda x: x[1], reverse=True)[:5]
+
+# --- Display result ---
+img_b64 = base64.b64encode(img_bytes).decode("utf-8")
+display(HTML(f'<img src="data:image/jpeg;base64,{img_b64}" width="250"/><br>'))
+print("Top-5 Predictions:\n")
+for label, p in top5:
+    print(f"{label:<30} {p:.4f}")

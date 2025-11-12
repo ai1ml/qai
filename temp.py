@@ -1,50 +1,45 @@
-def true_label_from_key(key):
-    return key[len(VAL_PREFIX):].split("/", 1)[0]
+import boto3, base64
+from sagemaker.serializers import IdentitySerializer
+from sagemaker.deserializers import JSONDeserializer
 
-# NEW: normalize GT folder names to 5 flowers
-def canon_true(lbl):
-    l = lbl.lower()
-    return {"roses": "rose", "sunflowers": "sunflower", "tulips": "tulip"}.get(l, l)
+# ---- CONFIG ----
+BUCKET = "your-bucket-name"
+PREFIX = "path/to/images/"   # e.g. "mobilenetv2/datasets/tf_flowers/validation/"
+MAX_IMAGES = 5               # set None to use ALL images
 
-# NEW: map any model label → one of 5 flowers or "other"
-def map_pred_to_6(label: str) -> str:
-    l = (label or "").lower()
-    if "daisy" in l:      return "daisy"
-    if "dandelion" in l:  return "dandelion"
-    if "sunflower" in l:  return "sunflower"
-    if "tulip" in l:      return "tulip"
-    if "rose" in l:       return "rose"
-    return "other"  # anything else = failure
+# ---- configure predictor (once) ----
+predictor.serializer   = IdentitySerializer("application/x-image")
+predictor.deserializer = JSONDeserializer()
 
--------
+s3 = boto3.client("s3")
 
-    resp = predictor.predict(img_bytes)  # dict with 'probabilities'
-    probs  = resp.get("probabilities", None)
-    labels = resp.get("labels", [])
+def list_image_keys(bucket, prefix):
+    """Recursively list all image keys under the given prefix."""
+    keys = []
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            k = obj["Key"]
+            if k.lower().endswith((".jpg", ".jpeg", ".png", ".bmp")):
+                keys.append(k)
+    return keys
 
-    if probs is None or not labels:
-        raise ValueError(f"No 'probabilities' or 'labels' in response: {resp}")
+# ---- get keys (and optionally limit) ----
+image_keys = list_image_keys(BUCKET, PREFIX)
+if MAX_IMAGES is not None:
+    image_keys = image_keys[:MAX_IMAGES]
 
-    pred_idx       = int(np.argmax(probs))
-    raw_pred_label = labels[pred_idx]
+print(f"Running inference on {len(image_keys)} images\n")
 
-    gt = canon_true(true_label_from_key(key))      # one of 5 flowers
-    y_true.append(gt)
-    y_pred.append(map_pred_to_6(raw_pred_label))   # 5 flowers or "other"
+for key in image_keys:
+    img_bytes = s3.get_object(Bucket=BUCKET, Key=key)["Body"].read()
+    result = predictor.predict(img_bytes)
 
------------
+    labels = result.get("labels", [])
+    probs  = result.get("probabilities", [])
+    top5   = sorted(zip(labels, probs), key=lambda x: x[1], reverse=True)[:5]
 
-classes = ["daisy", "dandelion", "rose", "sunflower", "tulip", "other"]
-
-acc = accuracy_score(y_true, y_pred)
-print(f"Validation accuracy on {len(y_true)} images: {acc:.4f}")
-print(classification_report(y_true, y_pred,
-                            labels=classes,
-                            target_names=classes,
-                            zero_division=0))
-
-------
-
-cm = confusion_matrix(y_true, y_pred, labels=classes)
-sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
-            xticklabels=classes, yticklabels=classes)
+    print(f"Image: s3://{BUCKET}/{key}")
+    for label, p in top5:
+        print(f"  {label:<25} {p:.4f}")
+    print("-" * 60)

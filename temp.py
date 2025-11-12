@@ -1,32 +1,32 @@
-import base64
-from sagemaker.serializers import IdentitySerializer
-from sagemaker.deserializers import JSONDeserializer
-from IPython.display import HTML, display
+import numpy as np
+bad = []
 
-# --- Configure predictor ---
-predictor.serializer = IdentitySerializer("application/x-image")
-predictor.deserializer = JSONDeserializer()
+for key in image_keys:
+    img = s3.get_object(Bucket=BUCKET, Key=key)["Body"].read()
+    r = predictor.predict(img)
+    probs = r.get("probabilities", [])
+    labels = r.get("labels", [])
+    if not probs or not labels:
+        continue
+    pred = labels[int(np.argmax(probs))]
+    gt = true_label_from_key(key)
+    if pred.lower() != gt.lower():
+        bad.append((key, gt, pred))
 
-# --- Path to your local image ---
-image_path = "/Users/sachinmittal/Desktop/test_flower.jpg"
+print("Total images:", len(image_keys))
+print("Misclassified by pretrained model:", len(bad))
+print("Sample errors:")
+for b in bad[:5]:
+    print(f"  {b[0]} — GT: {b[1]} | Pred: {b[2]}")
 
-# --- Read image bytes ---
-with open(image_path, "rb") as f:
-    img_bytes = f.read()
 
-# --- Run inference ---
-result = predictor.predict(img_bytes)
+--------
 
-# --- Parse response ---
-labels = result.get("labels", [])
-probs = result.get("probabilities", [])
+BUCKET = "qcom-dev-experience"
+VAL_PREFIX = "mobilenetv2/datasets/tf_flowers/validation/"
+image_keys = list_all_images(BUCKET, VAL_PREFIX)
 
-# --- Get Top-5 ---
-top5 = sorted(zip(labels, probs), key=lambda x: x[1], reverse=True)[:5]
+---------
 
-# --- Display result ---
-img_b64 = base64.b64encode(img_bytes).decode("utf-8")
-display(HTML(f'<img src="data:image/jpeg;base64,{img_b64}" width="250"/><br>'))
-print("Top-5 Predictions:\n")
-for label, p in top5:
-    print(f"{label:<30} {p:.4f}")
+def true_label_from_key(key):
+    return key[len(VAL_PREFIX):].split("/")[0]

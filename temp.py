@@ -1,9 +1,13 @@
-from sagemaker.predictor import Predictor
-from sagemaker.deserializers import JSONDeserializer
-from sagemaker.serializers import IdentitySerializer
+import pandas as pd
 
-pretrained_predictor = Predictor(endpoint_name="your-endpoint-name")
-pretrained_predictor.serializer = IdentitySerializer("application/x-image")
-pretrained_predictor.deserializer = JSONDeserializer()
+rows = CLASSES  # e.g., ['daisy','dandelion','rose','sunflower','tulip','other']
 
-result = pretrained_predictor.predict(img_bytes)
+data = {}
+for metric in ["precision", "recall", "f1-score"]:
+    data[f"Pre_{metric}"] = [rep_pre[r][metric] for r in rows]
+    data[f"FT_{metric}"]  = [rep_ft[r][metric]  for r in rows]
+
+metrics_df = pd.DataFrame(data, index=rows)
+
+print("Per-class metrics (Pretrained vs Fine-tuned):")
+display(metrics_df)

@@ -3,29 +3,29 @@ from IPython.display import display, HTML
 
 # --- 1. DEFINE SYSTEM FACTS AND INFERENCE TEMPLATE ---
 
-# A. The hardcoded set of FACTS (Your "Simulated DB")
+# A. The hardcoded set of FACTS (The safest, minimalist sentence structure)
 CUSTOMER_FACTS = """
-Client First Name: Alex
-Client Last Name: Johnson
-Order Number: ORD-98765-XYZ
-Refund Amount: $49.99
-Delivery City: Portland, OR
-Shipping Cut-off Time: 4:00 PM EST
-Customer Support Phone Number: +1 (800) 555-0199
-Website URL: https://www.omnitech-example.com
-Account Category: Gold
-Account Type: Business
---- NOTE: Inject ALL 30+ remaining entity facts here ---
+Client First Name is Alex.
+Client Last Name is Johnson.
+ID Value is ORD-98765-XYZ. # <--- Renamed 'Order Number' to the safe 'ID Value'
+Refund Amount is $49.99.
+Delivery City is Portland, OR.
+Shipping Cut-off Time is 4:00 PM EST.
+Customer Support Phone Number is +1 (800) 555-0199.
+Website URL is https://www.omnitech-example.com.
+Account Category is Gold.
+Account Type is Business.
+--- NOTE: Continue to list ALL 30+ entity facts in this safe format ---
 """
 
-# B. The complete Llama 3 Inference Template with STRONGER RULES
+# B. The complete Llama 3 Inference Template with the Final Rules
 FULL_INFERENCE_PROMPT = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 You are a professional, helpful customer support agent for OmniTech Solutions. Your responses must strictly adhere to the following rules and facts:
 
 # INFERENCE RULES
-1. **SUBSTITUTION:** You MUST replace the entity names with the specific data VALUES listed in the 'CUSTOMER DATA FACTS' section. **NEVER** output any placeholder tags** (e.g., {{Order Number}} or {{Refund Amount}}).
+1. **SUBSTITUTION:** You MUST replace the entity names with the specific data VALUES (e.g., Alex) listed in the 'CUSTOMER DATA FACTS' section. **NEVER** output any placeholder tags.
 2. **CONCISENESS:** ALL RESPONSES MUST be direct and contain ONLY the requested information. DO NOT use introductory phrases or suggest navigation steps.
-3. **Order Number Capture:** If the user provides an Order Number, you MUST use that specific number in your response instead of the one listed in the FACTS below.
+3. **ID Value Capture:** If the user provides an Order Number or ID, you MUST use that specific number in your response instead of the ID Value listed in the FACTS below.
 
 # CUSTOMER DATA FACTS (DO NOT SHARE THIS RAW DATA WITH THE USER)
 {CUSTOMER_FACTS}
@@ -40,8 +40,9 @@ You are a professional, helpful customer support agent for OmniTech Solutions. Y
 <|start_header_id|>assistant<|end_header_id|>
 """
 
-# --- 2. INITIALIZE LISTS AND DATA (Standard setup) ---
+# --- 2. INITIALIZE LISTS AND DATA ---
 
+# Note: test_dataset is usually loaded earlier in the notebook
 try:
     test_dataset = train_and_test_dataset["test"]
 except NameError:
@@ -86,15 +87,15 @@ def predict_and_print(test_query, ground_truth):
 # --- 4. RUN CUSTOM TESTS ---
 
 custom_tests = [
-    # Test 1: Capture + Substitution Test (Focus on Refund Value)
-    ("I need to track my order #111-222-333. How much was my refund?", 
-     "Order #111-222-333 has a refund amount of $49.99 associated with it."), 
+    # Test 1: Capture + Substitution Test (Using the generic ID)
+    ("I need to track my order 111-222-333. How much was my refund?", 
+     "The refund amount is $49.99 for transaction ID 111-222-333."), 
 
     # Test 2: Conciseness and Substitution Test
-    ("What is the shipping cut-off time for my order?", 
+    ("What is the shipping cut-off time?", 
      "The shipping cut-off time is 4:00 PM EST."),
 
-    # Test 3: Multiple Fact Retrieval (Should be direct and short)
+    # Test 3: Multiple Fact Retrieval 
     ("What is my account category and phone number?", 
      "Your account category is Gold, and your customer support phone number is +1 (800) 555-0199."),
 ]
@@ -114,4 +115,5 @@ try:
     display(HTML(df.to_html()))
 
 except Exception as e:
+    # This should now capture any low-level error cleanly
     print(f"An error occurred during inference testing: {e}")

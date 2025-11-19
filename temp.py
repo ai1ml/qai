@@ -1,47 +1,24 @@
-# 1. Define the complete, hardcoded set of FACTS for inference testing
-#    NOTE: This must include ALL 30+ entities. We show the primary ones here.
+import pandas as pd
+from IPython.display import display, HTML
+
+# --- 1. DEFINE SYSTEM FACTS AND INFERENCE TEMPLATE ---
+
+# A. The hardcoded set of FACTS for inference testing (Your "Simulated DB")
 CUSTOMER_FACTS = """
-# IDENTITY & ACCOUNT INFO
 Client First Name: Alex
 Client Last Name: Johnson
-Salutation: Mr. Johnson
-Customer Support Phone Number: +1 (800) 555-0199
-Customer Support Email: support@omnitech.com
-Account Type: Business
-Account Category: Gold
-Profile Type: Premium
-Program: Loyalty Rewards Program
-Account Change: Change to Monthly Billing
-Upgrade Account: Annual Subscription
-Profile: Customer Account Summary
-Settings: Notification Settings
-
-# ORDER & FINANCIAL INFO
 Order Number: ORD-98765-XYZ
-Invoice Number: INV-2025-0312
 Refund Amount: $49.99
-Money Amount: $129.99
-
-# LOCATION & TIME
 Delivery City: Portland, OR
-Delivery Country: USA
 Shipping Cut-off Time: 4:00 PM EST
-Store Location: Miami Flagship Store
-Date: 2025-11-18
-Date Range: 7-10 days
-
-# INTERACTION & SUPPORT INFO
-Online Order Interaction: "Track Order Status"
-Online Payment Interaction: "Manage Payment Details"
-Online Navigation Step: "Click 'My Account' then 'Subscriptions'"
-Online Customer Support Channel: "Knowledge Base"
-Online Company Portal Info: Customer Dashboard
-Live Chat Support: "Chat with a Specialist"
+Customer Support Phone Number: +1 (800) 555-0199
 Website URL: https://www.omnitech-example.com
-
+Account Category: Gold
+Account Type: Business
+--- NOTE: Inject ALL 30+ remaining entity facts here to match your training data ---
 """
 
-# 2. Define the complete Llama 3 Inference Template (System Context + User Query)
+# B. The complete Llama 3 Inference Template (System Context + Rules)
 FULL_INFERENCE_PROMPT = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 You are a professional, helpful customer support agent for OmniTech Solutions. Your responses must strictly adhere to the following rules and facts:
 
@@ -63,62 +40,76 @@ Please keep answers concise and to the point.
 <|start_header_id|>assistant<|end_header_id|>
 """
 
+# --- 2. INITIALIZE LISTS AND DATA ---
 
+# Note: test_dataset is usually loaded earlier in the notebook
+try:
+    test_dataset = train_and_test_dataset["test"]
+except NameError:
+    print("Warning: 'train_and_test_dataset' not found. Skipping general test set loading.")
+    pass
 
+(
+    inputs,
+    ground_truth_responses,
+    responses_before_finetuning,
+    responses_after_finetuning,
+) = (
+    [],
+    [],
+    [],
+    [],
+)
 
-# This entire section REPLACES your existing def predict_and_print(datapoint):
+# --- 3. THE PREDICTION FUNCTION ---
+
 def predict_and_print(test_query, ground_truth):
-    # The prompt building is simplified to inject the user's query into the full system template
+    # Inject the specific test query into the full system template
     full_query_with_context = FULL_INFERENCE_PROMPT.format(user_query=test_query)
 
-    # Note: We are no longer using the input_output_demarkation_key as it's built into the Llama format
-
     # Add the prompt and expected answer to our lists
-    inputs.append(full_query_with_context)
+    inputs.append(test_query) # Store only the user query for clean table display
     ground_truth_responses.append(ground_truth)
 
     payload = {
         "inputs": full_query_with_context,
-        "parameters": {"max_new_tokens": 200},
+        "parameters": {"max_new_tokens": 200, "temperature": 0.1},
     }
 
-    # --- Prediction Calls Remain The Same ---
-    # Pre-trained Model (will likely fail the test)
+    # Prediction for Pre-trained Model (Before Fine-tuning)
     pretrained_response = pretrained_predictor.predict(
         payload, custom_attributes="accept_eula=true"
     )
     responses_before_finetuning.append(pretrained_response.get("generated_text"))
 
-    # Fine-Tuned Model (should pass the test)
+    # Prediction for Fine-Tuned Model (Should follow the rules)
     finetuned_response = finetuned_predictor.predict(payload)
     responses_after_finetuning.append(finetuned_response.get("generated_text"))
 
+# --- 4. RUN CUSTOM TESTS ---
 
-
-
-# Create a custom set of tests specifically for the entity logic
+# Define tests specifically targeting your custom rules (Order Capture and Fact Replacement)
 custom_tests = [
     # Test 1: Fact Retrieval + Capturing an UNKNOWN Order Number
     ("I need to track my order #111-222-333. How much was my refund?", 
-     "Order #111-222-333 has a refund amount of $49.99 associated with it."), 
+     "Hello Alex Johnson, your order #111-222-333 has a refund amount of $49.99 associated with it."), 
 
     # Test 2: Basic Fact Retrieval (Should use the hardcoded Order Number)
     ("What is the shipping cut-off time for my order?", 
      "The shipping cut-off time is 4:00 PM EST for order ORD-98765-XYZ."),
 
-    # Test 3: Identity Retrieval
-    ("Can I speak with Alex Johnson?", 
-     "Certainly, I see your name is Alex Johnson. How can I help you?"),
+    # Test 3: Multiple Fact Retrieval (Identity and Account)
+    ("What is my account category and phone number?", 
+     "I see your account category is Gold, and your support phone number is +1 (800) 555-0199."),
 ]
 
 try:
     for test_query, expected_output in custom_tests:
-        # Note: We pass the query and the expected ground truth directly
         predict_and_print(test_query, expected_output) 
 
     df = pd.DataFrame(
         {
-            "Inputs": inputs,
+            "User Query": inputs,
             "Ground Truth": ground_truth_responses,
             "Response from non-finetuned model": responses_before_finetuning,
             "Response from fine-tuned model": responses_after_finetuning,
@@ -127,4 +118,4 @@ try:
     display(HTML(df.to_html()))
 
 except Exception as e:
-    print(e)
+    print(f"An error occurred during inference testing: {e}")
